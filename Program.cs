@@ -56,7 +56,7 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += CurrentDomainOnUnhandledException;
         AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
 
-        Utils.WriteLine($"== {AppDomain.CurrentDomain.FriendlyName} Startup ==");
+        Common.Utils.WriteLine($"== {AppDomain.CurrentDomain.FriendlyName} Startup ==");
 
         var builder = new ConfigurationBuilder()
             .SetBasePath(Environment.CurrentDirectory)
@@ -64,27 +64,27 @@ internal static class Program
         CacheData.Configuration = builder.Build();
         _ = new UBContext(CacheData.Configuration["Database"]);
         
-        Utils.WriteLine("Registering instance");
+        Common.Utils.WriteLine("Registering instance");
         Utils.RegisterInstance();
-        Utils.WriteLine("***************************************");
+        Common.Utils.WriteLine("***************************************");
         LoadViaAbstract();
-        Utils.WriteLine("***************************************");
+        Common.Utils.WriteLine("***************************************");
         LoadCustomCommands();
-        Utils.WriteLine("***************************************");
+        Common.Utils.WriteLine("***************************************");
         LoadRabbitMQManager();
-        Utils.WriteLine("***************************************");
+        Common.Utils.WriteLine("***************************************");
         Utils.SetInstanceStatus(Enums.States.Operational);
-        Utils.WriteLine("Startup completed.\n");
+        Common.Utils.WriteLine("Startup completed.\n");
 
         Console.ReadLine();
 
-        Utils.WriteLine("Manual shutdown started.\n");
+        Common.Utils.WriteLine("Manual shutdown started.\n");
         _manualShutdown = true;
         DoShutdown();
     }
     private static void LoadRabbitMQManager()
     {
-        Utils.WriteLine("Creating RabbitMQ instance...");
+        Common.Utils.WriteLine("Creating RabbitMQ instance...");
         var factory = new ConnectionFactory();
         factory.UserName = CacheData.Configuration?["RabbitMQ:UserName"];
         factory.Password = CacheData.Configuration?["RabbitMQ:Password"];
@@ -93,7 +93,7 @@ internal static class Program
         factory.Port = int.Parse(CacheData.Configuration?["RabbitMQ:Port"] ?? "0");
         factory.DispatchConsumersAsync = true;
 
-        Utils.WriteLine("Connecting to RabbitMQ server...");
+        Common.Utils.WriteLine("Connecting to RabbitMQ server...");
         _conn = factory.CreateConnection();
         _channel = _conn.CreateModel();
 
@@ -102,7 +102,7 @@ internal static class Program
         var tgConsumer = new AsyncEventingBasicConsumer(_channel);
         tgConsumer.Received += ConsumerOnTgMessage;
 
-        Utils.WriteLine("Start consuming tg.commands queue...");
+        Common.Utils.WriteLine("Start consuming tg.commands queue...");
         _channel.BasicConsume("tg.commands", false, tgConsumer);
     }
 
@@ -124,7 +124,7 @@ internal static class Program
             {
                 commandStr = commandStr.Split(' ')[0].Split('@')[0];
             }
-            Utils.WriteLine($"Received command: {qMessage.Payload.Text}");
+            Common.Utils.WriteLine($"Received command: {qMessage.Payload.Text}");
 
             if (_customCommands.ContainsKey(qMessage.UBChat.ChatId))
             {
@@ -148,16 +148,16 @@ internal static class Program
                     }
                     catch (Exception ex)
                     {
-                        Utils.WriteLine($"Error executing command: {command.Name}", 3);
-                        Utils.WriteLine($"Exception: {ex.Message}", 3);
+                        Common.Utils.WriteLine($"Error executing command: {command.Name}", 3);
+                        Common.Utils.WriteLine($"Exception: {ex.Message}", 3);
                     }
                 else
-                    Utils.WriteLine($"Received message (starting with command token): {qMessage.Payload.Text}");
+                    Common.Utils.WriteLine($"Received message (starting with command token): {qMessage.Payload.Text}");
             }
         }
         else
         {
-            Utils.WriteLine($"Received message: {qMessage.Payload.Text}");
+            Common.Utils.WriteLine($"Received message: {qMessage.Payload.Text}");
         }
 
         if (!skipChecks)
@@ -167,7 +167,7 @@ internal static class Program
 
     private static void LoadViaAbstract()
     {
-        Utils.WriteLine("Loading internal commands...");
+        Common.Utils.WriteLine("Loading internal commands...");
 
         var type = typeof(Command);
         var types = AppDomain.CurrentDomain.GetAssemblies()
@@ -175,7 +175,7 @@ internal static class Program
             .Where(p => type.IsAssignableFrom(p) && !p.IsAbstract);
 
         var foundCommands = types as Type[] ?? types.ToArray();
-        Utils.WriteLine($"Found {foundCommands.Count()} command(s)");
+        Common.Utils.WriteLine($"Found {foundCommands.Count()} command(s)");
 
         foreach (var command in foundCommands)
         {
@@ -183,7 +183,7 @@ internal static class Program
                 new[] { typeof(string), typeof(QueueMessage<TGChat, UserPrivileges, UserPrivileges, Message>) });
             if (constructor == null)
             {
-                Utils.WriteLine($"No valid constructor found for command command: {command.Name}", 3);
+                Common.Utils.WriteLine($"No valid constructor found for command command: {command.Name}", 3);
                 continue;
             }
 
@@ -200,19 +200,19 @@ internal static class Program
                 }
                 else
                 {
-                    Utils.WriteLine($"Error creating instance for command command: {command.Name}", 3);
+                    Common.Utils.WriteLine($"Error creating instance for command command: {command.Name}", 3);
                 }
             }
             catch (Exception ex)
             {
-                Utils.WriteLine($"Error loading command: {command.Name}", 3);
-                Utils.WriteLine($"Exception: {ex.Message}", 3);
+                Common.Utils.WriteLine($"Error loading command: {command.Name}", 3);
+                Common.Utils.WriteLine($"Exception: {ex.Message}", 3);
             }
         }
     }
     private static void LoadCustomCommands()
     {
-        Utils.WriteLine("Loading custom commands...");
+        Common.Utils.WriteLine("Loading custom commands...");
 
         // get custom commands from db
         var customCommands = new List<UBCustomCommand>();
@@ -250,13 +250,13 @@ internal static class Program
         {
             if (_customCommands.ContainsKey(c.ChatId))
             {
-                Utils.WriteLine($"Found command {c.Command}");
+                Common.Utils.WriteLine($"Found command {c.Command}");
                 _customCommands[c.ChatId].Add(c.Command, c);
             } 
             else 
             {
-                Utils.WriteLine($"Adding commands for chat {c.ChatId}");
-                Utils.WriteLine($"Found command {c.Command}");
+                Common.Utils.WriteLine($"Adding commands for chat {c.ChatId}");
+                Common.Utils.WriteLine($"Found command {c.Command}");
                 var d = new Dictionary<string, UBCustomCommand>();
                 d.Add(c.Command, c);
                 _customCommands.Add(c.ChatId, d);
@@ -266,24 +266,24 @@ internal static class Program
     
     private static void DoShutdown()
     {
-        Utils.WriteLine("Closing RabbitMQ connection");
+        Common.Utils.WriteLine("Closing RabbitMQ connection");
         _channel?.Close();
         _conn?.Close();
-        Utils.WriteLine("Deregistering instance");
+        Common.Utils.WriteLine("Deregistering instance");
         Utils.DeregisterInstance();
-        Utils.WriteLine("***************************************");
-        Utils.WriteLine("Shutdown completed.");
+        Common.Utils.WriteLine("***************************************");
+        Common.Utils.WriteLine("Shutdown completed.");
     }
     private static void CurrentDomainOnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = (e.ExceptionObject as Exception);
             
-        Utils.WriteLine(ex?.Message);
+        Common.Utils.WriteLine(ex?.Message);
     }
     private static void CurrentDomainOnProcessExit(object? sender, EventArgs e)
     {
         if (_manualShutdown) return;
-        Utils.WriteLine("SIGTERM shutdown started.\n");
+        Common.Utils.WriteLine("SIGTERM shutdown started.\n");
         DoShutdown();
     }
     
